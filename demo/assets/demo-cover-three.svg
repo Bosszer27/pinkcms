@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#123832"/>
+      <stop offset="1" stop-color="#19a788"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="360" rx="24" fill="url(#bg)"/>
+  <circle cx="510" cy="84" r="118" fill="#fff" opacity=".08"/>
+  <text x="48" y="168" fill="#fff" font-family="Arial,sans-serif" font-size="42" font-weight="700">PINKCMS DEMO</text>
+  <text x="50" y="218" fill="#d9fff5" font-family="Arial,sans-serif" font-size="24">Sample post 03</text>
+</svg>

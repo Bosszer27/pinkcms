@@ -2,6 +2,15 @@
 
 Review date: 2026-10-24
 
+## Repository packages
+
+- `production/` contains the clean deployment source and schema-only installer.
+- `demo/` contains a separate full source copy with a synthetic seed for three
+  example posts. Its schema creates `pinkcms_demo` and contains no users,
+  activity, real credentials, or private local content.
+- Root `.gitignore` rules exclude `config.php`, uploads, `.env` files, and
+  populated local `database.sql` dumps from both packages.
+
 ## Prepared
 
 - Removed the public-header shortcut to the admin login. Authorized admins can
@@ -34,8 +43,9 @@ Review date: 2026-10-24
 The local `database.sql` is a populated development dump. It includes an
 administrator account created with the weak default password `admin123` and
 sample site data. It is ignored by Git and must not be uploaded or deployed.
-Use the schema-only installer for a clean installation. Local `config.php`
-and uploaded media also remain untracked.
+The public demo uses synthetic records instead. Use the schema-only installer
+for a clean installation. Local `config.php` and uploaded media also remain
+untracked.
 
 ## Validation limits
 

@@ -1,0 +1,16 @@
+Options -Indexes
+RewriteEngine On
+
+RewriteCond %{THE_REQUEST} \s(/[^?\s]*)/admin/index\.php(?:\?|\s) [NC]
+RewriteRule ^admin/index\.php$ %1/admin/ [R=302,L,NE]
+
+RewriteCond %{THE_REQUEST} \s(/[^?\s]*)/index\.php(?:\?|\s) [NC]
+RewriteRule ^index\.php$ %1/ [R=302,L,NE]
+
+<FilesMatch "^(config|functions)\.php$">
+    Require all denied
+</FilesMatch>
+
+<FilesMatch "\.(sql|txt|ps1|bak|json)$">
+    Require all denied
+</FilesMatch>
