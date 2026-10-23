@@ -104,6 +104,14 @@ function validImageReference($value) {
     if (preg_match('/^https?:\/\/[^\s]+$/i',$value)) return true;
     return isset($value[0]) && $value[0] === '/' && substr($value,0,2) !== '//';
 }
+function validAdDestinationUrl($value) {
+    $value = trim((string)$value);
+    if ($value === '' || preg_match('/[\x00-\x20<>"]/',$value)) return false;
+    $parts = parse_url($value);
+    return is_array($parts) && isset($parts['scheme'],$parts['host']) &&
+        in_array(strtolower($parts['scheme']),['http','https'],true) &&
+        !isset($parts['user']) && !isset($parts['pass']);
+}
 function getStudio($id) {
     global $conn;
     $id = intval($id);

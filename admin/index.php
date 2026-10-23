@@ -249,12 +249,80 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
     if ($action==='delete_banner') { mysqli_query($conn,"DELETE FROM banners WHERE id=".intval($_POST['id'])); header('Location: index.php?page=banners'); exit; }
     if ($action==='toggle_cmt') { $id=intval($_POST['id']); $r=mysqli_fetch_assoc(mysqli_query($conn,"SELECT approved FROM comments WHERE id=$id")); $new=$r['approved']?0:1; mysqli_query($conn,"UPDATE comments SET approved=$new WHERE id=$id"); header('Location: index.php?page=comments'); exit; }
     if ($action==='delete_cmt') { mysqli_query($conn,"DELETE FROM comments WHERE id=".intval($_POST['id'])); header('Location: index.php?page=comments'); exit; }
+    if ($action==='save_site_content') {
+        $menuConfigs=[];$menuError='';
+        $featuredLimitValue=isset($_POST['homeFeaturedLimit'])&&is_string($_POST['homeFeaturedLimit'])?$_POST['homeFeaturedLimit']:'12';
+        $bannerIntervalValue=isset($_POST['bannerInterval'])&&is_string($_POST['bannerInterval'])?$_POST['bannerInterval']:'3';
+        $featuredIntervalValue=isset($_POST['featuredInterval'])&&is_string($_POST['featuredInterval'])?$_POST['featuredInterval']:'6';
+        $featuredLimit=ctype_digit($featuredLimitValue)?(int)$featuredLimitValue:0;
+        $bannerInterval=ctype_digit($bannerIntervalValue)?(int)$bannerIntervalValue:0;
+        $featuredInterval=ctype_digit($featuredIntervalValue)?(int)$featuredIntervalValue:0;
+        if(!in_array($featuredLimit,[4,6,8,10,12,16,20,24],true)||$bannerInterval<3||$bannerInterval>30||$featuredInterval<3||$featuredInterval>30) {
+            $menuError='ค่าจำนวนการ์ดหรือความเร็วสไลด์อยู่นอกช่วงที่กำหนด';
+        }
+        foreach(['header'=>6,'explore'=>6,'bottom'=>4] as $menuName=>$slotCount) {
+            $labels=isset($_POST['menu_'.$menuName.'_label'])&&is_array($_POST['menu_'.$menuName.'_label'])?$_POST['menu_'.$menuName.'_label']:[];
+            $destinations=isset($_POST['menu_'.$menuName.'_destination'])&&is_array($_POST['menu_'.$menuName.'_destination'])?$_POST['menu_'.$menuName.'_destination']:[];
+            $customUrls=isset($_POST['menu_'.$menuName.'_custom'])&&is_array($_POST['menu_'.$menuName.'_custom'])?$_POST['menu_'.$menuName.'_custom']:[];
+            $menuConfigs[$menuName]=[];
+            for($slot=0;$slot<$slotCount;$slot++) {
+                $labelValue=isset($labels[$slot])?$labels[$slot]:'';
+                $destinationValue=isset($destinations[$slot])?$destinations[$slot]:'';
+                $customValue=isset($customUrls[$slot])?$customUrls[$slot]:'';
+                if(!is_string($labelValue)||!is_string($destinationValue)||!is_string($customValue)) {
+                    $menuError='ข้อมูลเมนูไม่ถูกต้อง กรุณาตรวจสอบรายการเมนู';
+                    break 2;
+                }
+                $label=trim($labelValue);$destination=trim($destinationValue);$customUrl=trim($customValue);
+                if($label===''&&$destination===''&&$customUrl==='')continue;
+                if($label===''||$destination==='') {
+                    $menuError='กรุณาระบุชื่อและปลายทางให้ครบในแต่ละเมนู';
+                    break 2;
+                }
+                $type=$destination;$value='';
+                if(preg_match('/^(category|tag):([a-z0-9ก-๙-]+)$/iu',$destination,$match)) {
+                    $type=$match[1];$value=$match[2];
+                } elseif($destination==='custom') {
+                    if(!(validAdDestinationUrl($customUrl)||preg_match('/^(?:index\.php\?|\/(?!\/))[^\s<>"]*$/u',$customUrl))) {
+                        $menuError='ลิงก์ Custom ต้องเป็น URL http(s) ที่ถูกต้อง หรือพาธภายในเว็บไซต์ เช่น index.php?page=all';
+                        break 2;
+                    }
+                    $value=$customUrl;
+                } elseif(!in_array($destination,['home','all','categories','studio_list','actor_list','tag_list'],true)) {
+                    $menuError='พบประเภทเมนูที่ไม่รองรับ กรุณาเลือกปลายทางจากรายการ';
+                    break 2;
+                }
+                $menuConfigs[$menuName][]=['label'=>mb_substr($label,0,60,'UTF-8'),'type'=>$type,'value'=>$value];
+            }
+        }
+        if($menuError==='') {
+            $siteFields=[
+                'site_home_featured_title'=>['homeFeaturedTitle','แนะนำ'],
+                'site_home_featured_all_label'=>['homeFeaturedAllLabel','ดูทั้งหมด'],
+                'site_home_latest_title'=>['homeLatestTitle','โพสต์ล่าสุด'],
+                'site_banner_accessibility'=>['bannerAccessibility','บทความรหัสหนังใหม่'],
+                'site_ad_label'=>['siteAdLabel','โฆษณา'],
+                'site_ad_close_label'=>['siteAdCloseLabel','ปิดโฆษณา'],
+                'site_search_placeholder'=>['siteSearchPlaceholder','ค้นหา...'],
+                'site_search_button'=>['siteSearchButton','ค้นหา'],
+                'site_home_featured_limit'=>['homeFeaturedLimit',(string)$featuredLimit],
+                'site_banner_interval_seconds'=>['bannerInterval',(string)$bannerInterval],
+                'site_home_featured_interval_seconds'=>['featuredInterval',(string)$featuredInterval]
+            ];
+            foreach($siteFields as $settingKey=>$field) {
+                $value=isset($_POST[$field[0]])&&is_string($_POST[$field[0]])?trim($_POST[$field[0]]):'';
+                saveSetting($settingKey,mb_substr($value,0,120,'UTF-8'));
+            }
+            foreach($menuConfigs as $menuName=>$menuItems)saveSetting('site_menu_'.$menuName,json_encode($menuItems,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE));
+            logActivity('แก้ไขเนื้อหาและเมนูหน้าเว็บ');$msg='บันทึกเนื้อหาและเมนูหน้าเว็บแล้ว';
+        } else {
+            $msg=$menuError;
+        }
+    }
     if ($action==='save_theme') {
         saveSetting('logoText', trim($_POST['logoText']));
         saveSetting('theme_accent', trim($_POST['accent']));
         foreach (['showViews','showStudio','showTags','showActors','showDuration','showBottomNav','showSearch','showRelated','showBanners','showAnnouncement'] as $k) saveSetting('theme_'.$k, isset($_POST[$k])?'1':'0');
-        $navLabels = [trim($_POST['nav0']),trim($_POST['nav1']),trim($_POST['nav2']),trim($_POST['nav3'])];
-        saveSetting('theme_navLabels', json_encode($navLabels));
         logActivity('แก้ไขสไตล์เว็บ'); $msg='บันทึกสไตล์แล้ว';
     }
     if ($action==='save_seo') {
@@ -268,16 +336,41 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
         logActivity('แก้ไขตั้งค่า SEO'); $msg='บันทึก SEO แล้ว';
     }
     if ($action==='save_system') {
+        $videoAdSlots=[];$videoAdError='';
+        foreach(['top'=>4,'inside'=>1,'bottom'=>3] as $position=>$slotCount) {
+            $destinationKey='videoAd'.ucfirst($position).'Destination';
+            $imageKey='videoAd'.ucfirst($position).'Image';
+            $destinations=isset($_POST[$destinationKey])&&is_array($_POST[$destinationKey])?$_POST[$destinationKey]:[];
+            $images=isset($_POST[$imageKey])&&is_array($_POST[$imageKey])?$_POST[$imageKey]:[];
+            for($slot=0;$slot<$slotCount;$slot++) {
+                $destinationValue=isset($destinations[$slot])?$destinations[$slot]:'';
+                $imageValue=isset($images[$slot])?$images[$slot]:'';
+                if(!is_string($destinationValue) || !is_string($imageValue)) {
+                    $videoAdError='ข้อมูลโฆษณาไม่ถูกต้อง กรุณาตรวจ URL ปลายทางและ URL รูปภาพอีกครั้ง';
+                    break 2;
+                }
+                $destination=trim($destinationValue);
+                $image=trim($imageValue);
+                if(substr($image,0,2)==='//')$image='https:'.$image;
+                if($destination==='' && $image==='')continue;
+                if(!validAdDestinationUrl($destination) || $image==='' || !validImageReference($image)) {
+                    $videoAdError='กรุณากรอก URL ปลายทางแบบ http(s) และ URL รูปภาพที่ถูกต้องให้ครบในแต่ละป้ายโฆษณา';
+                    break 2;
+                }
+                $videoAdSlots[$position][]=['destination'=>$destination,'image'=>$image];
+            }
+        }
+        if($videoAdError==='') {
         saveSetting('siteName', trim($_POST['siteName']));
         saveSetting('siteDesc', trim($_POST['siteDesc']));
         saveSetting('footerText', trim($_POST['footerText']));
         saveSetting('announcement', trim($_POST['announcement']));
-        saveSetting('hero_title1', trim($_POST['hero_title1']));
-        saveSetting('hero_title2', trim($_POST['hero_title2']));
-        saveSetting('hero_sub', trim($_POST['hero_sub']));
-        saveSetting('hero_desc', trim($_POST['hero_desc']));
         if (trim($_POST['newPass'])) { $p=password_hash(trim($_POST['newPass']), PASSWORD_DEFAULT); $stmt=mysqli_prepare($conn,"UPDATE users SET password=? WHERE username='admin'"); mysqli_stmt_bind_param($stmt,'s',$p); mysqli_stmt_execute($stmt); mysqli_stmt_close($stmt); }
+        saveSetting('video_ad_slots',json_encode($videoAdSlots,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE));
         logActivity('แก้ไขตั้งค่าระบบ'); $msg='บันทึกตั้งค่าแล้ว';
+        } else {
+            $msg=$videoAdError;
+        }
     }
     if ($action==='export') {
         $data = ['settings'=>$SETTINGS];
@@ -311,7 +404,7 @@ $menus = [
     'dashboard'=>'📊 ภาพรวม','posts'=>'📝 โพสต์ทั้งหมด','post-new'=>'➕ เขียนโพสต์ใหม่',
     'studios'=>'🎬 ค่าย','actors'=>'👤 นักแสดง','tags'=>'🏷️ แท็ก','media'=>'🖼️ สื่อ/แกลเลอรี่',
     'pages'=>'📄 หน้าเว็บ','banners'=>'📢 แบนเนอร์/ประกาศ','comments'=>'💬 คอมเมนต์'.($pendingCmts?' <span class="badge badge-red">'.$pendingCmts.'</span>':''),
-    'users'=>'👥 ผู้ใช้งาน','reports'=>'📈 รายงาน/สถิติ','theme'=>'🎨 สไตล์ & เมนู','seo'=>'🔍 ตั้งค่า SEO','settings'=>'⚙️ ตั้งค่าระบบ'
+    'users'=>'👥 ผู้ใช้งาน','reports'=>'📈 รายงาน/สถิติ','theme'=>'🎨 สไตล์ & เมนู','site-content'=>'🧩 เนื้อหาเว็บ & เมนู','seo'=>'🔍 ตั้งค่า SEO','settings'=>'⚙️ ตั้งค่าระบบ'
 ];
 
 function adminContent($page) {
@@ -328,7 +421,7 @@ function adminContent($page) {
         '<div class="stat-card"><div class="stat-num" style="color:var(--accent3);">'.count($actors).'</div><div class="stat-label">นักแสดง</div></div>'.
         '<div class="stat-card"><div class="stat-num" style="color:var(--gold);">'.number_format($totalViews).'</div><div class="stat-label">ยอดวิวรวม</div></div>'.
         '<div class="stat-card"><div class="stat-num" style="color:var(--danger);">'.$pendingCmts.'</div><div class="stat-label">คอมเมนต์รออนุมัติ</div></div></div>'.
-        '<div class="grid" style="grid-template-columns:2fr 1fr;gap:12px;margin-bottom:24px;">'.
+        '<div class="grid dashboard-chart-grid" style="grid-template-columns:2fr 1fr;gap:12px;margin-bottom:24px;">'.
         '<div class="card"><div class="section-title">📈 ยอดวิว 7 วันล่าสุด</div><div class="bar-chart">'.implode('',array_map(function($v)use($max){return '<div class="bar" style="height:'.($v/$max*100).'%;" title="'.$v.'"><span>'.($v>999?round($v/1000,1).'k':$v).'</span></div>';},$chartData)).'</div></div>'.
         '<div class="card"><div class="section-title">🕐 กิจกรรมล่าสุด</div><div style="font-size:12px;line-height:2;max-height:140px;overflow:auto;">'.implode('',array_map(function($a){return '<div style="border-bottom:1px solid var(--border);padding:4px 0;"><span style="color:var(--accent);">●</span> '.esc($a['action']).'<br><span style="color:var(--muted);font-size:10px;">'.fmtTime($a['time']).'</span></div>';},$recentAct)).'</div></div></div>'.
         '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;"><h2 style="font-size:16px;font-weight:700;">โพสต์ล่าสุด</h2><a class="btn btn-primary btn-sm" href="index.php?page=post-new">+ เขียนใหม่</a></div>'.
@@ -581,14 +674,100 @@ function adminContent($page) {
         '<div class="card mb"><div class="section-title">🏆 โพสต์ยอดนิยม 10 อันดับ</div><div style="overflow-x:auto;"><table><thead><tr><th>อันดับ</th><th>ชื่อโพสต์</th><th>ค่าย</th><th>ยอดวิว</th></tr></thead><tbody>'.
         implode('',array_map(function($p,$i){$rc=$i===0?'var(--gold)':($i===1?'var(--muted)':($i===2?'#cd7f32':'var(--muted)'));return '<tr><td><span style="font-weight:900;color:'.$rc.';font-size:16px;">'.($i+1).'</span></td><td style="font-weight:600;">'.esc($p['title']).'</td><td>'.esc(getStudio($p['studioId'])['name']).'</td><td style="color:var(--accent);font-weight:700;">'.number_format($p['views']).'</td></tr>';},$topPosts,array_keys($topPosts))).
         '</tbody></table></div></div>'.
-        '<div class="grid" style="grid-template-columns:1fr 1fr;gap:12px;">'.
+        '<div class="grid reports-taxonomy-grid" style="grid-template-columns:1fr 1fr;gap:12px;">'.
         '<div class="card"><div class="section-title">🎬 ยอดวิวแยกตามค่าย</div><table><thead><tr><th>ค่าย</th><th>จำนวนโพสต์</th><th>ยอดวิว</th></tr></thead><tbody>'.
         implode('',array_map(function($s){return '<tr><td>'.esc($s['name']).'</td><td>'.$s['count'].'</td><td style="color:var(--accent);font-weight:700;">'.number_format($s['views']).'</td></tr>';},$studioViews)).'</tbody></table></div>'.
         '<div class="card"><div class="section-title">👤 ยอดวิวแยกตามนักแสดง</div><table><thead><tr><th>นักแสดง</th><th>ยอดวิวรวม</th></tr></thead><tbody>'.
         implode('',array_map(function($a){return '<tr><td>'.esc($a['name']).'</td><td style="color:var(--accent2);font-weight:700;">'.number_format($a['views']).'</td></tr>';},$actorViews)).'</tbody></table></div></div>';
     }
+    if ($page==='site-content') {
+        $categoryNames=[];
+        foreach($posts as $post) {
+            if($post['status']!=='publish')continue;
+            $names=preg_split('/[,،;|，；\r\n]+/u',isset($post['category'])?$post['category']:'');
+            foreach($names?:[] as $name)if(trim($name)!=='')$categoryNames[trim($name)]=true;
+            foreach(json_decode(isset($post['tagIds'])?$post['tagIds']:'[]',true)?:[] as $tagId) {
+                foreach($tags as $tag)if((int)$tag['id']===(int)$tagId)$categoryNames[$tag['name']]=true;
+            }
+        }
+        uksort($categoryNames,'strnatcasecmp');
+        $categoryOptions=[];$usedSlugs=[];
+        foreach($categoryNames as $name=>$unused) {
+            $base=slugify($name);$categorySlug=$base;$suffix=2;
+            while(isset($usedSlugs[$categorySlug]))$categorySlug=$base.'-'.$suffix++;
+            $usedSlugs[$categorySlug]=true;$categoryOptions[$categorySlug]=$name;
+        }
+        $menuTypes=[
+            'home'=>'หน้าหลัก','all'=>'เรื่องทั้งหมด','categories'=>'หน้ารวมหมวดหมู่',
+            'studio_list'=>'รายชื่อค่าย','actor_list'=>'รายชื่อนักแสดง','tag_list'=>'รายการแท็ก'
+        ];
+        $menuGroups=[
+            'header'=>['label'=>'เมนูหลักบน Header','count'=>6,'defaults'=>[
+                ['label'=>'นักแสดง','type'=>'actor_list','value'=>''],['label'=>'ค่าย','type'=>'studio_list','value'=>''],
+                ['label'=>'รหัสเรื่อง','type'=>'all','value'=>''],['label'=>'บทความ','type'=>'categories','value'=>'']
+            ]],
+            'explore'=>['label'=>'แถบสำรวจเนื้อหา','count'=>6,'defaults'=>[
+                ['label'=>'เรื่องทั้งหมด','type'=>'all','value'=>''],['label'=>'หมวดหมู่','type'=>'categories','value'=>'']
+            ]],
+            'bottom'=>['label'=>'เมนูล่าง','count'=>4,'defaults'=>array_map(function($index,$label){$types=['home','studio_list','actor_list','tag_list'];return ['label'=>$label,'type'=>$types[$index],'value'=>''];},[0,1,2,3],json_decode(setting('theme_navLabels','["หน้าหลัก","ค่าย","นักแสดง","แท็ก"]'),true)?:['หน้าหลัก','ค่าย','นักแสดง','แท็ก'])]
+        ];
+        $menuHtml='';
+        foreach($menuGroups as $menuName=>$group) {
+            $stored=json_decode(setting('site_menu_'.$menuName,''),true);
+            if(!is_array($stored))$stored=$group['defaults'];
+            $menuHtml.='<div class="card mb"><div class="section-title">'.esc($group['label']).'</div><p style="font-size:11px;color:var(--muted);margin-bottom:10px;">เว้นรายการว่างเพื่อไม่แสดงเมนู · เลือกหมวด/แท็กด้านล่างเพื่อเชื่อมไปหน้ารายการนั้น</p>';
+            for($slot=0;$slot<$group['count'];$slot++) {
+                $item=isset($stored[$slot])&&is_array($stored[$slot])?$stored[$slot]:[];
+                $label=isset($item['label'])?$item['label']:'';
+                $type=isset($item['type'])?$item['type']:'';
+                $value=isset($item['value'])?$item['value']:'';
+                $selection=$type;
+                if($type==='category'||$type==='tag')$selection=$type.':'.$value;
+                $destinationName='menu_'.$menuName.'_destination[]';
+                $labelName='menu_'.$menuName.'_label[]';
+                $customName='menu_'.$menuName.'_custom[]';
+                $options='<option value="">— ไม่ใช้เมนูนี้ —</option>';
+                foreach($menuTypes as $menuType=>$menuLabel)$options.='<option value="'.esc($menuType).'"'.($selection===$menuType?' selected':'').'>'.esc($menuLabel).'</option>';
+                foreach($categoryOptions as $categorySlug=>$categoryName)$options.='<option value="category:'.esc($categorySlug).'"'.($selection==='category:'.$categorySlug?' selected':'').'>หมวดหมู่: '.esc($categoryName).'</option>';
+                foreach($tags as $tag)$options.='<option value="tag:'.esc($tag['slug']).'"'.($selection==='tag:'.$tag['slug']?' selected':'').'>แท็ก: '.esc($tag['name']).'</option>';
+                $options.='<option value="custom"'.($selection==='custom'?' selected':'').'>Custom URL</option>';
+                $customUrl=$type==='custom'?$value:'';
+                $menuHtml.='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:8px;padding:10px 0;border-top:1px solid var(--border);align-items:end;"><div class="form-group" style="margin:0;"><label>ชื่อเมนู '.($slot+1).'</label><input name="'.esc($labelName).'" value="'.esc($label).'" maxlength="60" placeholder="เช่น หนังใหม่"></div><div class="form-group" style="margin:0;"><label>ปลายทาง</label><select name="'.esc($destinationName).'">'.$options.'</select></div><div class="form-group" style="margin:0;"><label>URL (ใช้เมื่อเลือก Custom)</label><input name="'.esc($customName).'" value="'.esc($customUrl).'" placeholder="https://example.com หรือ index.php?page=all"></div></div>';
+            }
+            $menuHtml.='</div>';
+        }
+        $contentFields=[
+            ['homeFeaturedTitle','site_home_featured_title','หัวข้อการ์ดสไลด์แนะนำ','แนะนำ'],
+            ['homeFeaturedAllLabel','site_home_featured_all_label','ข้อความปุ่มดูทั้งหมด','ดูทั้งหมด'],
+            ['homeLatestTitle','site_home_latest_title','หัวข้อรายการล่าสุดหน้าแรก','โพสต์ล่าสุด'],
+            ['bannerAccessibility','site_banner_accessibility','ชื่อส่วนสไลด์แบนเนอร์','บทความรหัสหนังใหม่'],
+            ['siteAdLabel','site_ad_label','ป้ายกำกับโฆษณา','โฆษณา'],
+            ['siteAdCloseLabel','site_ad_close_label','ข้อความปุ่มปิดโฆษณาในวิดีโอ','ปิดโฆษณา'],
+            ['siteSearchPlaceholder','site_search_placeholder','ข้อความตัวอย่างช่องค้นหา','ค้นหา...'],
+            ['siteSearchButton','site_search_button','ข้อความปุ่มค้นหา','ค้นหา']
+        ];
+        $contentInputs='';
+        foreach($contentFields as $field)$contentInputs.='<div class="form-group"><label>'.esc($field[2]).'</label><input name="'.esc($field[0]).'" maxlength="120" value="'.esc(setting($field[1],$field[3])).'"></div>';
+        $featuredLimit=(int)setting('site_home_featured_limit','12');
+        if(!in_array($featuredLimit,[4,6,8,10,12,16,20,24],true))$featuredLimit=12;
+        $bannerInterval=(int)setting('site_banner_interval_seconds','3');
+        if($bannerInterval<3||$bannerInterval>30)$bannerInterval=3;
+        $featuredInterval=(int)setting('site_home_featured_interval_seconds','6');
+        if($featuredInterval<3||$featuredInterval>30)$featuredInterval=6;
+        $selectField=function($name,$label,$value,$options) {
+            $html='<div class="form-group"><label>'.esc($label).'</label><select name="'.esc($name).'">';
+            foreach($options as $optionValue=>$optionLabel)$html.='<option value="'.esc((string)$optionValue).'"'.((string)$optionValue===(string)$value?' selected':'').'>'.esc($optionLabel).'</option>';
+            return $html.'</select></div>';
+        };
+        $contentInputs.='<div class="form-row">'.$selectField('homeFeaturedLimit','จำนวนการ์ดในสไลด์แนะนำ',$featuredLimit,[4=>'4',6=>'6',8=>'8',10=>'10',12=>'12',16=>'16',20=>'20',24=>'24']).$selectField('bannerInterval','เวลาสลับแบนเนอร์ (วินาที)',$bannerInterval,array_combine(range(3,15),range(3,15))).'</div>';
+        $contentInputs.='<div class="form-row">'.$selectField('featuredInterval','เวลาสไลด์การ์ดแนะนำ (วินาที)',$featuredInterval,array_combine(range(3,30),range(3,30))).'</div>';
+        return '<h1 style="font-size:22px;font-weight:900;margin-bottom:8px;">🧩 เนื้อหาเว็บ &amp; เมนู</h1><p style="color:var(--muted);font-size:12px;margin-bottom:18px;">ปรับข้อความหน้าแรก เมนู และป้ายโฆษณาได้ที่นี่ แยกจากการตั้งค่า SEO หลักของเว็บไซต์ · ตั้งค่าลิงก์และภาพโฆษณาที่ <a href="index.php?page=settings#video-ad-settings" style="color:var(--accent);">ตั้งค่าระบบ → โฆษณารอบวิดีโอ</a></p>'.
+        '<form method="post"><input type="hidden" name="action" value="save_site_content">'.
+        '<div class="card mb"><div class="section-title">หัวข้อและป้ายบนหน้าเว็บ</div>'.$contentInputs.'</div>'.
+        $menuHtml.
+        '<button class="btn btn-primary" type="submit">💾 บันทึกเนื้อหาและเมนู</button> <a class="btn btn-ghost" href="../index.php" target="_blank" rel="noopener">👁 ดูหน้าบ้าน</a></form>';
+    }
     if ($page==='theme') {
-        $navLabels=json_decode(setting('theme_navLabels','["หน้าหลัก","ค่าย","นักแสดง","แท็ก"]'),true)?:['หน้าหลัก','ค่าย','นักแสดง','แท็ก'];
         $toggles=['showViews'=>'แสดงยอดวิว (Views)','showStudio'=>'แสดงชื่อค่ายบนการ์ด','showTags'=>'แสดงแท็กบนการ์ด','showActors'=>'แสดงนักแสดงบนการ์ด','showDuration'=>'แสดงความยาววิดีโอบนการ์ด','showBottomNav'=>'แสดงเมนูล่าง (Bottom Nav)','showSearch'=>'แสดงแถบค้นหาบน Header','showRelated'=>'แสดงโพสต์ที่เกี่ยวข้องใต้โพสต์','showBanners'=>'แสดงแบนเนอร์ Slideshow บนหน้าแรก','showAnnouncement'=>'แสดงแถบประกาศเลื่อนบนสุด'];
         return '<h1 style="font-size:22px;font-weight:900;margin-bottom:20px;">🎨 จัดการสไตล์ &amp; เมนูหน้าเว็บ</h1>'.
         '<form method="post"><input type="hidden" name="action" value="save_theme">'.
@@ -597,8 +776,7 @@ function adminContent($page) {
         '<div class="form-group"><label>สี Accent</label><div style="display:flex;gap:8px;"><input type="color" name="accent" value="'.esc(setting('theme_accent','#ff2d78')).'" style="width:60px;padding:4px;height:42px;"><input name="accent_txt" value="'.esc(setting('theme_accent','#ff2d78')).'" style="flex:1;"></div></div></div></div>'.
         '<div class="card mb"><div class="section-title">เปิด / ปิด ไอเทมบนหน้าเว็บ</div>'.
         implode('',array_map(function($k,$label){$on=setting('theme_'.$k,'1')==='1';return '<div class="toggle-row"><span>'.$label.'</span><label class="switch"><input type="checkbox" name="'.$k.'" '.($on?'checked':'').'><span class="slider"></span></label></div>';},array_keys($toggles),$toggles)).'</div>'.
-        '<div class="card mb"><div class="section-title">เปลี่ยนชื่อเมนูล่าง (4 ปุ่ม)</div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">'.
-        implode('',array_map(function($i)use($navLabels){return '<div class="form-group"><label>ปุ่มที่ '.($i+1).'</label><input name="nav'.$i.'" value="'.esc($navLabels[$i]).'"></div>';},[0,1,2,3])).'</div></div>'.
+        '<div class="card mb"><div class="section-title">ตั้งค่าเมนู</div><p style="color:var(--muted);font-size:12px;">ตั้งชื่อ ปลายทาง หมวดหมู่ แท็ก และลิงก์ Custom ได้ที่ <a href="index.php?page=site-content" style="color:var(--accent);">เนื้อหาเว็บ &amp; เมนู</a></p></div>'.
         '<button class="btn btn-primary" type="submit">💾 บันทึกสไตล์</button> <a class="btn btn-ghost" href="../index.php" target="_blank">👁 ดูหน้าบ้าน</a></form>';
     }
     if ($page==='seo') {
@@ -686,6 +864,22 @@ function adminContent($page) {
     }
     if ($page==='settings') {
         $recentAct=[];$res=mysqli_query($conn,"SELECT * FROM activity ORDER BY time DESC LIMIT 50");while($r=mysqli_fetch_assoc($res))$recentAct[]=$r;
+        $videoAdSlots=json_decode(setting('video_ad_slots','{}'),true);
+        if(!is_array($videoAdSlots))$videoAdSlots=[];
+        $videoAdsHtml='<div class="card mb" id="video-ad-settings"><div class="section-title">โฆษณารอบวิดีโอ</div><p style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:14px;">ใส่เฉพาะ URL ปลายทางและ URL รูปภาพ ระบบจะสร้างป้ายโฆษณาให้อัตโนมัติ เว้นทั้งสองช่องว่างหากไม่ใช้ช่องนั้น</p>';
+        foreach(['top'=>['label'=>'ด้านบนวิดีโอ','count'=>4],'inside'=>['label'=>'โฆษณาภายในเครื่องเล่น','count'=>1],'bottom'=>['label'=>'ด้านล่างวิดีโอ','count'=>3]] as $position=>$group) {
+            $videoAdsHtml.='<h3 style="font-size:14px;font-weight:700;margin:14px 0 8px;">'.$group['label'].'</h3>';
+            $entries=isset($videoAdSlots[$position])&&is_array($videoAdSlots[$position])?$videoAdSlots[$position]:[];
+            for($slot=0;$slot<$group['count'];$slot++) {
+                $entry=isset($entries[$slot])&&is_array($entries[$slot])?$entries[$slot]:[];
+                $destination=isset($entry['destination'])?$entry['destination']:'';
+                $image=isset($entry['image'])?$entry['image']:'';
+                $destinationKey='videoAd'.ucfirst($position).'Destination';
+                $imageKey='videoAd'.ucfirst($position).'Image';
+                $videoAdsHtml.='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:10px;padding:12px 0;border-top:1px solid var(--border);"><div class="form-group" style="margin:0;"><label>ป้าย '.($slot+1).' — URL ปลายทาง</label><input type="url" name="'.$destinationKey.'[]" value="'.esc($destination).'" placeholder="https://example.com/" inputmode="url"></div><div class="form-group" style="margin:0;"><label>URL รูปภาพ</label><input type="text" name="'.$imageKey.'[]" value="'.esc($image).'" placeholder="https://example.com/banner.gif" inputmode="url"></div></div>';
+            }
+        }
+        $videoAdsHtml.='</div>';
         return '<h1 style="font-size:22px;font-weight:900;margin-bottom:20px;">⚙️ ตั้งค่าระบบ &amp; สำรองข้อมูล</h1>'.
         '<form method="post"><input type="hidden" name="action" value="save_system">'.
         '<div class="card mb"><div class="section-title">ข้อมูลเว็บไซต์หลัก</div>'.
@@ -695,12 +889,7 @@ function adminContent($page) {
         '<div class="form-group"><label>รหัสผ่านหลังบ้านใหม่ (เว้นว่าง = ไม่เปลี่ยน)</label><input type="password" name="newPass" autocomplete="new-password"></div></div>'.
         '<div class="form-group"><label>ข้อความแถบประกาศเลื่อนบนสุด</label><input name="announcement" value="'.esc(setting('announcement','')).'"></div>'.
         '<button class="btn btn-primary btn-sm" type="submit">💾 บันทึก</button></div>'.
-        '<div class="card mb"><div class="section-title">Hero Banner (หน้าแรก)</div>'.
-        '<div class="form-row"><div class="form-group"><label>หัวข้อบรรทัด 1</label><input name="hero_title1" value="'.esc(setting('hero_title1','')).'"></div>'.
-        '<div class="form-group"><label>หัวข้อบรรทัด 2 (สี accent)</label><input name="hero_title2" value="'.esc(setting('hero_title2','')).'"></div></div>'.
-        '<div class="form-row"><div class="form-group"><label>Kicker (ข้อความเล็กบนสุด)</label><input name="hero_sub" value="'.esc(setting('hero_sub','')).'"></div>'.
-        '<div class="form-group"><label>คำอธิบายใต้หัวข้อ</label><input name="hero_desc" value="'.esc(setting('hero_desc','')).'"></div></div>'.
-        '<button class="btn btn-primary btn-sm" type="submit">💾 บันทึก Hero</button></div></form>'.
+        $videoAdsHtml.'</form>'.
         '<div class="card mb"><div class="section-title">ข้อมูล &amp; สำรอง</div><p style="font-size:12px;color:var(--muted);margin-bottom:12px;">ข้อมูลเก็บใน MySQL — กดส่งออกเพื่อเก็บสำรอง</p>'.
         '<div style="display:flex;gap:10px;flex-wrap:wrap;"><form method="post"><input type="hidden" name="action" value="export"><button class="btn btn-ghost" type="submit">📥 ส่งออกข้อมูล (JSON)</button></form>'.
         '<form method="post" onsubmit="return confirm(\'รีเซ็ตข้อมูลทั้งหมด?\')"><input type="hidden" name="action" value="reset"><button class="btn btn-danger" type="submit">🔄 รีเซ็ตทั้งหมด</button></form></div></div>'.
@@ -756,6 +945,7 @@ tr:hover{background:rgba(255,255,255,.02)}
 .stat-num{font-size:28px;font-weight:900;color:var(--accent)}
 .stat-label{font-size:11px;color:var(--muted);margin-top:4px}
 .admin-layout{display:flex;min-height:100vh}
+.admin-mobile-bar{display:none}
 .admin-sidebar{width:240px;background:var(--card);border-right:1px solid var(--border);padding:16px 10px;flex-shrink:0;position:sticky;top:0;height:100vh;overflow-y:auto;scrollbar-width:none;-ms-overflow-style:none}
 .admin-sidebar::-webkit-scrollbar,.editor-preview-panel::-webkit-scrollbar{width:0;height:0}
 .sidebar-status{display:flex;align-items:center;gap:10px;padding:11px 12px;margin:0 2px 14px;border:1px solid rgba(34,197,94,.2);border-radius:12px;background:linear-gradient(120deg,rgba(34,197,94,.12),rgba(34,211,238,.05))}
@@ -907,7 +1097,7 @@ html,body{scrollbar-width:none;-ms-overflow-style:none}
 .lightbox-close{position:absolute;top:20px;right:24px;font-size:32px;color:#fff;cursor:pointer;background:none;border:none}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:10px 22px;border-radius:999px;font-size:13px;font-weight:600;box-shadow:0 0 20px rgba(255,45,120,.5);z-index:999;animation:toastIn .3s ease}
 @keyframes toastIn{from{opacity:0;transform:translate(-50%,20px)}to{opacity:1;transform:translate(-50%,0)}}
-@media(max-width:768px){.form-row,.form-row-3{grid-template-columns:1fr}.admin-sidebar{display:none}.admin-main{padding:14px}}
+@media(max-width:768px){.form-row,.form-row-3{grid-template-columns:1fr}.admin-mobile-bar{position:sticky;top:0;z-index:120;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;padding:8px 14px;border-bottom:1px solid var(--border);background:rgba(10,10,15,.96);backdrop-filter:blur(12px)}.admin-mobile-brand{font-size:14px;font-weight:900}.admin-menu-toggle{display:inline-flex;align-items:center;gap:8px;min-height:38px;padding:7px 12px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text);font-family:inherit;font-size:13px;font-weight:600}.admin-layout{display:block;min-height:calc(100vh - 56px)}.admin-sidebar{display:none;position:fixed;top:56px;bottom:0;left:0;z-index:110;width:min(300px,86vw);height:auto;padding:16px 12px;overflow-y:auto;border-right:1px solid var(--border);box-shadow:14px 0 36px rgba(0,0,0,.4)}.admin-layout.menu-open .admin-sidebar{display:block}.admin-menu-backdrop{display:none;position:fixed;inset:56px 0 0;z-index:105;width:100%;height:calc(100dvh - 56px);border:0;background:rgba(0,0,0,.62)}.admin-layout.menu-open .admin-menu-backdrop{display:block}.admin-main{padding:14px;min-width:0;width:100%;overflow-x:clip}.admin-main>*{min-width:0;max-width:100%}.admin-main .card{min-width:0}.dashboard-chart-grid,.reports-taxonomy-grid{grid-template-columns:minmax(0,1fr)!important}.admin-menu-toggle:focus-visible,.admin-nav-item:focus-visible{outline:2px solid var(--accent);outline-offset:2px}}
 @media(max-width:1000px){.editor-columns{display:grid;grid-template-columns:minmax(0,1fr)}.editor-primary-column,.editor-side-column{display:contents}.editor-basic-card{grid-column:1;grid-row:1}.seo-audit-sticky{grid-column:1;grid-row:2;position:static}.editor-preview-panel{grid-column:1;grid-row:3;position:static}.editor-cover-preview{grid-column:1;grid-row:4}.editor-image-card{grid-column:1;grid-row:5}.editor-video-card{grid-column:1;grid-row:6}.editor-seo-card{grid-column:1;grid-row:7}.editor-content-card{grid-column:1;grid-row:8}.editor-gallery-card{grid-column:1;grid-row:9}.editor-taxonomy-card{grid-column:1;grid-row:10}}
 .posts-page{max-width:1500px;margin:0 auto}
 .posts-page-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:18px}
@@ -1027,8 +1217,9 @@ html,body{scrollbar-width:none;-ms-overflow-style:none}
 </head>
 <body>
 <?php if ($msg) echo '<script>window.addEventListener("load",function(){var t=document.createElement("div");t.className="toast";t.textContent="'.esc($msg).'";document.body.appendChild(t);setTimeout(function(){t.remove();},2500);});</script>'; ?>
+<div class="admin-mobile-bar"><div class="admin-mobile-brand">PINK<span style="color:var(--accent);">CMS</span> <span style="color:var(--gold);font-size:10px;">ADMIN</span></div><button class="admin-menu-toggle" type="button" aria-expanded="false" aria-controls="adminSidebar"><span aria-hidden="true">☰</span><span>เมนู</span></button></div>
 <div class="admin-layout">
-<aside class="admin-sidebar">
+<aside class="admin-sidebar" id="adminSidebar" aria-label="เมนูจัดการระบบ">
 <div style="font-size:17px;font-weight:900;margin-bottom:16px;padding:0 12px;line-height:1.2;">PINK<span style="color:var(--accent);">CMS</span> <span style="font-size:10px;color:var(--gold);font-weight:600;">ULTIMATE</span><div style="font-size:10px;color:var(--muted);font-weight:400;margin-top:2px;">Admin Panel (PHP+MySQL)</div></div>
 <div class="sidebar-status"><span class="sidebar-status-dot"></span><span><strong>ระบบพร้อมใช้งาน</strong><small>พื้นที่จัดการสำหรับผู้ดูแล</small></span></div>
 <?php foreach ($menus as $key=>$label): $active = ($page===$key || ($page==='post-edit' && $key==='posts')) ? 'active':''; ?>
@@ -1038,11 +1229,28 @@ html,body{scrollbar-width:none;-ms-overflow-style:none}
 <a class="admin-nav-item" href="../index.php" target="_blank">← กลับหน้าบ้าน</a>
 <a class="admin-nav-item" href="index.php?logout=1" style="color:var(--danger);">🚪 ออกจากระบบ</a>
 </aside>
+<button class="admin-menu-backdrop" type="button" aria-label="ปิดเมนู"></button>
 <main class="admin-main"><?php echo $content; ?></main>
 </div>
 <div id="lightbox" class="lightbox" onclick="this.classList.remove('active')"><button class="lightbox-close">×</button><img id="lightboxImg" src="" alt=""></div>
 <script>
 function openLightbox(src){document.getElementById('lightboxImg').src=src;document.getElementById('lightbox').classList.add('active');}
+(function(){
+  var layout=document.querySelector('.admin-layout');
+  var toggle=document.querySelector('.admin-menu-toggle');
+  var backdrop=document.querySelector('.admin-menu-backdrop');
+  if(!layout||!toggle||!backdrop)return;
+  function setMenuOpen(open){
+    layout.classList.toggle('menu-open',open);
+    toggle.setAttribute('aria-expanded',open?'true':'false');
+    toggle.querySelector('[aria-hidden="true"]').textContent=open?'×':'☰';
+    toggle.querySelectorAll('span')[1].textContent=open?'ปิดเมนู':'เมนู';
+  }
+  toggle.addEventListener('click',function(){setMenuOpen(!layout.classList.contains('menu-open'));});
+  backdrop.addEventListener('click',function(){setMenuOpen(false);});
+  layout.querySelectorAll('.admin-nav-item').forEach(function(link){link.addEventListener('click',function(){setMenuOpen(false);});});
+  document.addEventListener('keydown',function(event){if(event.key==='Escape')setMenuOpen(false);});
+})();
 (function(){
   var details=document.getElementById('post-keyword-notes');
   if(!details)return;
