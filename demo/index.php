@@ -247,11 +247,19 @@ if ($page === 'post' && $slug) {
             $studioHtml .= '<a class="post-detail-link" href="index.php?page=studio&amp;slug='.rawurlencode($postStudio['slug']).'">'.esc($postStudio['name']).'</a>';
         }
         if ($studioHtml === '') $studioHtml = '<span>ไม่ระบุ</span>';
+        $tagsHtml='';
+        foreach($tagIds as $tagId) {
+            $postTag=getTag($tagId);
+            if(!$postTag['id'] || trim($postTag['slug'])==='')continue;
+            if($tagsHtml!=='')$tagsHtml.='<span class="post-detail-separator">, </span>';
+            $tagsHtml.='<a class="post-detail-link" href="index.php?page=tag&amp;slug='.rawurlencode($postTag['slug']).'">#'.esc($postTag['name']).'</a>';
+        }
+        if($tagsHtml==='')$tagsHtml='<span>ไม่ระบุ</span>';
         $posterIsCustom=trim(isset($p['posterUrl'])?$p['posterUrl']:'')!=='';
         $postPoster=($posterIsCustom?$p['posterUrl']:'')?:($p['cover']?:$sourceVideo['thumb']);
         $posterHtml=$postPoster!==''?'<button class="post-poster poster-lightbox" type="button" data-poster-src="'.esc($postPoster).'" aria-label="ขยายโปสเตอร์"><img src="'.esc($postPoster).'" alt="โปสเตอร์ '.esc($p['title']).'" loading="lazy" onerror="var layout=this.closest(\'.post-detail-layout\');this.parentElement.remove();if(layout)layout.classList.add(\'post-detail-layout-no-poster\')"><span>ขยายภาพ</span></button>':'';
         $detailLayoutClass='post-detail-layout'.($posterIsCustom?'':' post-detail-layout-cover').($postPoster===''?' post-detail-layout-no-poster':'');
-        $detailsHtml='<section class="'.$detailLayoutClass.'" aria-label="ข้อมูลโพสต์">'.$posterHtml.'<div class="post-detail-panel"><h2>ข้อมูลเรื่อง</h2><div class="post-detail-row"><strong>หมวดหมู่</strong><div>'.($categoryHtml!==''?$categoryHtml:'<span>ไม่ระบุ</span>').'</div></div><div class="post-detail-row"><strong>ค่าย</strong><div>'.$studioHtml.'</div></div><div class="post-detail-row"><strong>นักแสดง</strong><div>'.($actorsHtml!==''?$actorsHtml:'<span>ไม่ระบุ</span>').'</div></div></div></section>';
+        $detailsHtml='<section class="'.$detailLayoutClass.'" aria-label="ข้อมูลโพสต์">'.$posterHtml.'<div class="post-detail-panel"><h2>ข้อมูลเรื่อง</h2><div class="post-detail-row"><strong>หมวดหมู่</strong><div>'.($categoryHtml!==''?$categoryHtml:'<span>ไม่ระบุ</span>').'</div></div><div class="post-detail-row"><strong>ค่าย</strong><div>'.$studioHtml.'</div></div><div class="post-detail-row"><strong>นักแสดง</strong><div>'.($actorsHtml!==''?$actorsHtml:'<span>ไม่ระบุ</span>').'</div></div><div class="post-detail-row"><strong>แท็ก</strong><div>'.$tagsHtml.'</div></div></div></section>';
         $shareUrl=rawurlencode($canonicalUrl);
         $shareTitle=rawurlencode($p['title']);
         $videoAdSlots=json_decode(setting('video_ad_slots','{}'),true);
@@ -350,8 +358,8 @@ if ($page === 'post' && $slug) {
         $metaTitle = !empty($item['metaTitle']) ? $item['metaTitle'] : $label.' '.$item['name'];
         $metaDesc = !empty($item['metaDesc']) ? $item['metaDesc'] : $descField;
         if ($page==='studio') $posts = mysqli_query($conn, "SELECT * FROM posts WHERE status='publish' AND studioId=".$item['id']." ORDER BY date DESC");
-        elseif ($page==='actor') { $posts = []; $all = publishedPosts(); foreach ($all as $pp) if (in_array($item['id'], json_decode($pp['actorIds'],true)?:[])) $posts[] = $pp; }
-        else { $posts = []; $all = publishedPosts(); foreach ($all as $pp) if (in_array($item['id'], json_decode($pp['tagIds'],true)?:[])) $posts[] = $pp; }
+        elseif ($page==='actor') { $posts = []; $all = publishedPosts(); foreach ($all as $pp) if (in_array((int)$item['id'], parseTaxonomyIds($pp['actorIds']),true)) $posts[] = $pp; }
+        else { $posts = []; $all = publishedPosts(); foreach ($all as $pp) if (in_array((int)$item['id'], parseTaxonomyIds($pp['tagIds']),true)) $posts[] = $pp; }
         $list = [];
         if ($page==='studio') { while ($r=mysqli_fetch_assoc($posts)) $list[]=$r; } else $list = $posts;
         $contentHtml = '<nav style="padding:16px 0;font-size:12px;color:var(--muted);"><a href="index.php" style="color:var(--accent);">หน้าหลัก</a> › '.esc($nameField).'</nav><h1 style="font-size:24px;font-weight:900;margin-bottom:6px;">'.esc($nameField).'</h1>'.($descField?'<p style="color:var(--muted);font-size:13px;margin-bottom:14px;max-width:600px;">'.esc($descField).'</p>':'').'<p style="color:var(--muted);font-size:13px;margin-bottom:20px;">พบทั้งหมด '.count($list).' รายการ</p>';
