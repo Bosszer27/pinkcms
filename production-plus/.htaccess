@@ -1,0 +1,23 @@
+Options -Indexes
+RewriteEngine On
+
+RewriteRule ^robots\.txt$ robots.php [L]
+RewriteRule ^ads\.txt$ ads.php [L]
+RewriteRule ^sitemap_index\.xml$ sitemap.php?type=index [L,QSA]
+RewriteRule ^sitemap-static\.xml$ sitemap.php?type=static [L,QSA]
+RewriteRule ^sitemap-(posts|pages)-([1-9][0-9]*)\.xml$ sitemap.php?type=$1&part=$2 [L,QSA]
+RewriteRule ^sitemap-(studios|actors|tags)-([1-9][0-9]*)\.xml$ sitemap.php?type=terms&entity=$1&part=$2 [L,QSA]
+
+RewriteCond %{THE_REQUEST} \s(/[^?\s]*)/admin/index\.php(?:\?|\s) [NC]
+RewriteRule ^admin/index\.php$ %1/admin/ [R=302,L,NE]
+
+RewriteCond %{THE_REQUEST} \s(/[^?\s]*)/index\.php(?:\?|\s) [NC]
+RewriteRule ^index\.php$ %1/ [R=302,L,NE]
+
+<FilesMatch "^(config|functions)\.php$">
+    Require all denied
+</FilesMatch>
+
+<FilesMatch "\.(sql|txt|ps1|bak|json)$">
+    Require all denied
+</FilesMatch>
